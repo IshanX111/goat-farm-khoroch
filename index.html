@@ -1409,19 +1409,94 @@ async function ensureJsPdf() {
   return window.jspdf.jsPDF;
 }
 
-function abToB64(buf) {
-  const bytes = new Uint8Array(buf);
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(out);
+async function ensurePdfFont() {
+  if (bnFontB64) return;
+  try {
+    const face = new FontFace('BnPdf', 'url(./NotoSansBengali-Regular.ttf)');
+    await face.load();
+    document.fonts.add(face);
+  } catch (_) {}
+  bnFontB64 = true;
 }
 
-async function ensureBnFont() {
-  if (bnFontB64) return bnFontB64;
-  const res = await fetch('./NotoSansBengali-Regular.ttf');
-  if (!res.ok) throw new Error('font');
-  bnFontB64 = abToB64(await res.arrayBuffer());
-  return bnFontB64;
+// jsPDF cannot shape Bangla (vowel signs and conjuncts break), so pages are
+// drawn on canvas, where the browser shapes text, and embedded as images.
+class CanvasDoc {
+  constructor() {
+    this.W = 210; this.H = 297; this.S = 6;
+    this.pages = [];
+    this.fill = '#000'; this.ink = '#000'; this.stroke = '#000'; this.lw = 0.3; this.size = 10;
+    this.internal = { pageSize: { getWidth: () => this.W, getHeight: () => this.H } };
+    this.addPage();
+  }
+  addPage() {
+    const c = document.createElement('canvas');
+    c.width = this.W * this.S; c.height = this.H * this.S;
+    this.ctx = c.getContext('2d');
+    this.ctx.fillStyle = '#fff';
+    this.ctx.fillRect(0, 0, c.width, c.height);
+    this.pages.push(c);
+  }
+  setFillColor(r, g, b) { this.fill = `rgb(${r},${g},${b})`; }
+  setTextColor(r, g, b) { this.ink = `rgb(${r},${g},${b})`; }
+  setDrawColor(r, g, b) { this.stroke = `rgb(${r},${g},${b})`; }
+  setLineWidth(w) { this.lw = w; }
+  setFontSize(s) { this.size = s; }
+  setFont() {}
+  font() { return `${(this.size * 0.3528 * this.S).toFixed(1)}px BnPdf, "Noto Sans Bengali", "Nirmala UI", sans-serif`; }
+  text(str, x, y, opt = {}) {
+    const c = this.ctx;
+    c.font = this.font();
+    c.fillStyle = this.ink;
+    c.textAlign = opt.align === 'right' ? 'right' : 'left';
+    c.textBaseline = 'alphabetic';
+    c.fillText(String(str), x * this.S, y * this.S);
+  }
+  rect(x, y, w, h) {
+    this.ctx.fillStyle = this.fill;
+    this.ctx.fillRect(x * this.S, y * this.S, w * this.S, h * this.S);
+  }
+  roundedRect(x, y, w, h, r) {
+    const S = this.S, c = this.ctx;
+    x *= S; y *= S; w *= S; h *= S; r = Math.min(r * S, w / 2, h / 2);
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.arcTo(x + w, y, x + w, y + h, r);
+    c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r);
+    c.arcTo(x, y, x + w, y, r);
+    c.closePath();
+    c.fillStyle = this.fill;
+    c.fill();
+  }
+  line(x1, y1, x2, y2) {
+    const c = this.ctx, S = this.S;
+    c.strokeStyle = this.stroke;
+    c.lineWidth = this.lw * S;
+    c.beginPath(); c.moveTo(x1 * S, y1 * S); c.lineTo(x2 * S, y2 * S); c.stroke();
+  }
+  splitTextToSize(str, maxW) {
+    const c = this.ctx;
+    c.font = this.font();
+    const max = maxW * this.S;
+    const lines = [];
+    let cur = '';
+    String(str).split(' ').forEach(word => {
+      const next = cur ? cur + ' ' + word : word;
+      if (c.measureText(next).width <= max || !cur) cur = next;
+      else { lines.push(cur); cur = word; }
+    });
+    if (cur) lines.push(cur);
+    return lines.length ? lines : [''];
+  }
+  toBlob(jsPDF) {
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
+    this.pages.forEach((c, i) => {
+      if (i) pdf.addPage();
+      pdf.addImage(c.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, this.W, this.H);
+    });
+    return pdf.output('blob');
+  }
 }
 
 function savePdfBlob(blob, filename) {
@@ -1444,7 +1519,7 @@ function savePdfBlob(blob, filename) {
 
 async function buildBanglaPdf(filename) {
   const jsPDF = await ensureJsPdf();
-  const fontB64 = await ensureBnFont();
+  await ensurePdfFont();
   const gs = groups(reportEntries());
   const grand = gs.reduce((s, g) => s + g.total, 0);
   const count = gs.reduce((s, g) => s + g.items.length, 0);
@@ -1453,10 +1528,7 @@ async function buildBanglaPdf(filename) {
   const months = [...new Set(gs.filter(g => g.date).map(g => g.date.slice(0, 7)))];
   const period = month !== 'all' ? bnMonth(month) : months.length === 1 ? bnMonth(months[0]) : 'সব খরচ';
 
-  const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
-  doc.addFileToVFS('NotoSansBengali-Regular.ttf', fontB64);
-  doc.addFont('NotoSansBengali-Regular.ttf', 'NotoBn', 'normal');
-  doc.setFont('NotoBn', 'normal');
+  const doc = new CanvasDoc();
 
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
@@ -1508,12 +1580,12 @@ async function buildBanglaPdf(filename) {
   const sw = (width - 6) / 3;
   stats.forEach((s, i) => {
     const x = left + i * (sw + 3);
-    doc.setFillColor(i === 2 ? 255, 246, 229 : 241, 247, 242);
+    doc.setFillColor(...(i === 2 ? [255, 246, 229] : [241, 247, 242]));
     doc.roundedRect(x, y, sw, 16, 2, 2, 'F');
     doc.setTextColor(91, 117, 99);
     doc.setFontSize(8);
     doc.text(s[0], x + 3, y + 5);
-    doc.setTextColor(i === 2 ? 160, 90, 0 : 27, 94, 58);
+    doc.setTextColor(...(i === 2 ? [160, 90, 0] : [27, 94, 58]));
     doc.setFontSize(11);
     doc.text(s[1], x + 3, y + 12);
   });
@@ -1548,7 +1620,6 @@ async function buildBanglaPdf(filename) {
   newPageIf(12);
   doc.setFillColor(255, 246, 229);
   doc.rect(left, y - 4, width, 9, 'F');
-  write();
   write('সর্বমোট', left + 2, 11, [160, 90, 0]);
   writeRight(money(grand), 12, [160, 90, 0]);
   y += 14;
@@ -1601,7 +1672,7 @@ async function buildBanglaPdf(filename) {
   y += 18;
   write('হিসাব নোট: প্রতিটি দিনের উপমোট তালিকাভুক্ত আইটেম থেকে স্বয়ংক্রিয়ভাবে যোগ করা হয়েছে।', left, 8, [111, 132, 117]);
 
-  return doc.output('blob');
+  return doc.toBlob(jsPDF);
 }
 
 async function downloadPdf() {
