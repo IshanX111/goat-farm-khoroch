@@ -517,7 +517,7 @@
 <div id="pdfStage" aria-hidden="true"><div class="pdf-sheet" id="pdfSheet"></div></div>
 <div id="pdfBusy" aria-live="polite"><div class="box">⏳ PDF তৈরি হচ্ছে…<div class="hint" style="margin-top:6px">একটু অপেক্ষা করুন</div></div></div>
 
-<audio id="bleat" src="./bleat.mp3" preload="auto"></audio>
+<audio id="bleat" src="./bleat.mp3" preload="auto" playsinline webkit-playsinline></audio>
 
 <div class="gate" id="gate">
   <div class="gate-card">
@@ -675,8 +675,13 @@ const Store = {
 const MUTE_KEY = 'goatfarm_mute';
 const BLEAT_EVERY_MS = 30_000;
 const bleat = $('bleat');
+bleat.setAttribute('playsinline', '');
+bleat.playsInline = true;
 let welcomed = false;
 let bleatTimer = null;
+let audioUnlocked = false;
+let pendingWelcomeSound = false;
+let gestureArm = null;
 const isMuted = () => localStorage.getItem(MUTE_KEY) === '1';
 function updateMuteUI() {
   const muted = isMuted();
@@ -691,29 +696,104 @@ function setMuted(v) {
   updateMuteUI();
   if (v) { bleat.pause(); bleat.currentTime = 0; }
 }
-function playBleat() {
-  if (isMuted() || document.hidden) return;
-  try { bleat.currentTime = 0; bleat.play().catch(() => {}); } catch (_) {}
+
+/** iPhone blocks sound until a tap. Unlock during that tap (e.g. Sign in). */
+async function unlockAudio() {
+  try {
+    bleat.muted = true;
+    bleat.volume = 0;
+    const p = bleat.play();
+    if (p) await p;
+    bleat.pause();
+    bleat.currentTime = 0;
+    bleat.muted = false;
+    bleat.volume = 1;
+    audioUnlocked = true;
+    return true;
+  } catch (_) {
+    try { bleat.muted = false; bleat.volume = 1; } catch (__) {}
+    return false;
+  }
 }
+
+function playBleat() {
+  if (isMuted() || document.hidden) return Promise.resolve(false);
+  try {
+    bleat.muted = false;
+    bleat.volume = 1;
+    bleat.currentTime = 0;
+    const p = bleat.play();
+    if (!p) return Promise.resolve(false);
+    return p.then(() => { audioUnlocked = true; return true; }).catch(() => false);
+  } catch (_) {
+    return Promise.resolve(false);
+  }
+}
+
+async function playBleatWithRetry(times = 6) {
+  for (let i = 0; i < times; i++) {
+    if (await playBleat()) return true;
+    await new Promise(r => setTimeout(r, 250));
+  }
+  return false;
+}
+
 function stopBleatLoop() {
   clearInterval(bleatTimer);
   bleatTimer = null;
 }
+
 function startBleatLoop() {
   stopBleatLoop();
   playBleat();
-  bleatTimer = setInterval(playBleat, BLEAT_EVERY_MS);
+  bleatTimer = setInterval(() => { playBleat(); }, BLEAT_EVERY_MS);
 }
+
+function disarmGestureUnlock() {
+  if (!gestureArm) return;
+  document.removeEventListener('pointerdown', gestureArm, true);
+  document.removeEventListener('touchstart', gestureArm, true);
+  document.removeEventListener('click', gestureArm, true);
+  gestureArm = null;
+}
+
+function armGestureUnlock() {
+  if (gestureArm || isMuted()) return;
+  gestureArm = async () => {
+    disarmGestureUnlock();
+    await unlockAudio();
+    if (pendingWelcomeSound || (welcomed && !bleatTimer)) {
+      pendingWelcomeSound = false;
+      startBleatLoop();
+    } else if (welcomed) {
+      playBleat();
+    }
+  };
+  document.addEventListener('pointerdown', gestureArm, true);
+  document.addEventListener('touchstart', gestureArm, true);
+  document.addEventListener('click', gestureArm, true);
+}
+
 function toggleMute() {
   const next = !isMuted();
   setMuted(next);
   toast(next ? 'শব্দ বন্ধ ✔' : 'শব্দ চালু ✔');
-  if (!next && welcomed) playBleat();
+  if (!next) {
+    unlockAudio().then(() => {
+      if (welcomed) {
+        pendingWelcomeSound = false;
+        if (!bleatTimer) startBleatLoop();
+        else playBleat();
+      }
+    });
+  } else {
+    stopBleatLoop();
+  }
 }
 $('muteBtn').onclick = toggleMute;
 updateMuteUI();
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && welcomed && !isMuted()) playBleat();
+  if (!document.hidden && welcomed && !isMuted() && audioUnlocked) playBleat();
 });
 
 /* ---------- auth gate & sync status ---------- */
@@ -724,9 +804,25 @@ function showGate(state, msg = '') {
   $('gateSignOut').hidden = state !== 'denied';
   $('gateSpin').hidden = state !== 'loading';
 }
-function hideGate() {
+async function hideGate() {
   $('gate').hidden = true;
-  if (!welcomed) { welcomed = true; startBleatLoop(); }
+  if (welcomed) return;
+  welcomed = true;
+  if (isMuted()) return;
+  if (audioUnlocked) {
+    pendingWelcomeSound = false;
+    startBleatLoop();
+    return;
+  }
+  // Login finished after OAuth — gesture may be gone on iPhone; retry then wait for a tap.
+  pendingWelcomeSound = true;
+  const ok = await playBleatWithRetry();
+  if (ok) {
+    pendingWelcomeSound = false;
+    startBleatLoop();
+  } else {
+    armGestureUnlock();
+  }
 }
 
 function setSync(meta) {
@@ -751,11 +847,18 @@ function onDbError(err) {
 }
 
 $('signInBtn').onclick = async () => {
+  // Must unlock during this tap — iPhone won't allow sound after Google login returns.
+  await unlockAudio();
   const provider = new GoogleAuthProvider();
   try {
     await signInWithPopup(auth, provider);
+    // Popup closed: try unlock again while still in the click task chain when possible.
+    await unlockAudio();
   } catch (err) {
-    if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') return signInWithRedirect(auth, provider);
+    if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') {
+      await unlockAudio();
+      return signInWithRedirect(auth, provider);
+    }
     if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
       showGate('out', `সাইন ইন হয়নি: ${esc(err.code || err.message)}`);
     }
@@ -1622,6 +1725,9 @@ onAuthStateChanged(auth, user => {
   Store.stop();
   if (!user) {
     welcomed = false;
+    pendingWelcomeSound = false;
+    audioUnlocked = false;
+    disarmGestureUnlock();
     stopBleatLoop();
     try { bleat.pause(); bleat.currentTime = 0; } catch (_) {}
     return showGate('out', 'হিসাব দেখতে Google অ্যাকাউন্ট দিয়ে সাইন ইন করুন');
