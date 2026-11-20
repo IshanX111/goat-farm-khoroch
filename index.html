@@ -1603,7 +1603,7 @@ async function buildBanglaPdf(filename) {
   doc.text('তারিখ', left + 14, y);
   doc.text('আইটেম', left + 95, y);
   doc.text('টাকা', right - 2, y, { align: 'right' });
-  y += 5;
+  y += 7.5;
 
   gs.forEach((g, i) => {
     newPageIf(10);
@@ -1638,7 +1638,7 @@ async function buildBanglaPdf(filename) {
     doc.roundedRect(left, y - 4, width, 10, 2, 2, 'F');
     write(`${g.title} · ${g.sub} · ${bn(g.items.length)}টি`, left + 3, 10, [27, 94, 58]);
     writeRight(money(g.total), 10, [27, 94, 58]);
-    y += 8;
+    y += 10;
 
     g.items.forEach((e, i) => {
       newPageIf(10);
@@ -1654,9 +1654,11 @@ async function buildBanglaPdf(filename) {
       }
     });
 
-    newPageIf(10);
+    newPageIf(12);
     doc.setDrawColor(213, 232, 217);
-    doc.line(left, y - 2, right, y - 2);
+    doc.setLineWidth(0.3);
+    doc.line(left, y - 3.6, right, y - 3.6);
+    y += 1.6;
     write('উপমোট', left + 2, 10, [27, 94, 58]);
     writeRight(money(g.total), 10, [27, 94, 58]);
     y += 10;
