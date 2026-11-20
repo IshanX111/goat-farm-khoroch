@@ -40,15 +40,25 @@
   .userbox button { border: none; background: rgba(255,255,255,.18); color: #fff; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; }
   .userbox button:hover { background: rgba(255,255,255,.3); }
   .gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px;
-          background: linear-gradient(135deg, var(--g9) 0%, var(--g8) 45%, var(--g5) 100%); }
-  .gate-card { background: #fff; border-radius: 20px; padding: 30px 26px; max-width: 380px; width: 100%; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
-  .gate-card .goat { font-size: 64px; line-height: 1; animation: bob 2.4s ease-in-out infinite; }
+          background: #123f28 center / cover no-repeat url('./login-bg.jpg'); }
+  .gate::before { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(18,63,40,.62), rgba(27,94,58,.72) 55%, rgba(18,63,40,.78)); }
+  .gate-card { position: relative; z-index: 1; background: rgba(255,255,255,.92); backdrop-filter: blur(10px);
+               border-radius: 20px; padding: 28px 24px 24px; max-width: 380px; width: 100%; text-align: center;
+               box-shadow: 0 20px 50px rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.5); }
+  .gate-card .goat { font-size: 56px; line-height: 1; animation: bob 2.4s ease-in-out infinite; filter: drop-shadow(0 4px 8px rgba(0,0,0,.2)); }
   @keyframes bob { 50% { transform: translateY(-6px) rotate(-4deg); } }
-  .gate-card h1 { font-size: 21px; color: var(--g8); margin: 12px 0 6px; }
+  .gate-card h1 { font-size: 21px; color: var(--g8); margin: 10px 0 6px; }
   .gate-card p { color: var(--muted); margin: 0 0 18px; line-height: 1.6; }
   .gate-card .btn { width: 100%; padding: 13px; font-size: 16px; }
+  .gate-mute { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; border-radius: 50%;
+               border: 1px solid rgba(27,94,58,.2); background: rgba(255,255,255,.85); font-size: 18px; padding: 0; }
+  .gate-mute:hover { background: #fff; }
   .gbtn { background: #fff; color: #3c4043; border: 1.5px solid #dadce0 !important; gap: 10px; }
   .gbtn:hover { background: #f7f8f8; }
+  .mute-btn { border: none; background: rgba(255,255,255,.18); color: #fff; border-radius: 999px; padding: 7px 12px;
+              font-size: 16px; line-height: 1; min-width: 42px; }
+  .mute-btn:hover { background: rgba(255,255,255,.3); }
+  .mute-btn.on { background: rgba(255,155,143,.35); }
   .spin { width: 34px; height: 34px; border: 4px solid var(--g1); border-top-color: var(--g6); border-radius: 50%; animation: rot 0.8s linear infinite; margin: 0 auto; }
   @keyframes rot { to { transform: rotate(360deg); } }
   .import-banner { margin-top: 14px; background: linear-gradient(135deg, #fff9ec, #fff1d2); border-color: #f1d9a6; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
@@ -355,6 +365,7 @@
         <div class="pill" id="syncPill"><span class="dot"></span><span id="syncText">সংযোগ হচ্ছে…</span></div>
       </div>
       <div class="hero-actions">
+        <button class="mute-btn" id="muteBtn" type="button" title="শব্দ" aria-label="শব্দ মিউট">🔊</button>
         <div class="userbox"><img id="userPhoto" alt="" referrerpolicy="no-referrer" hidden><span id="userName"></span><button id="signOutBtn">সাইন আউট</button></div>
         <button class="btn gold" id="pdfBtn">📄 PDF ডাউনলোড</button>
       </div>
@@ -475,8 +486,11 @@
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastBtn" hidden></button></div>
 <div id="report"></div>
 
+<audio id="bleat" src="./bleat.mp3" preload="auto"></audio>
+
 <div class="gate" id="gate">
   <div class="gate-card">
+    <button type="button" class="gate-mute" id="gateMuteBtn" title="শব্দ মিউট" aria-label="শব্দ মিউট">🔊</button>
     <div class="goat">🐐</div>
     <h1>ছাগলের খামার — খরচের হিসাব</h1>
     <p id="gateMsg">লোড হচ্ছে…</p>
@@ -627,6 +641,40 @@ const Store = {
   },
 };
 
+/* ---------- sound ---------- */
+const MUTE_KEY = 'goatfarm_mute';
+const bleat = $('bleat');
+let welcomed = false;
+const isMuted = () => localStorage.getItem(MUTE_KEY) === '1';
+function updateMuteUI() {
+  const muted = isMuted();
+  ['muteBtn', 'gateMuteBtn'].forEach(id => {
+    const b = $(id); if (!b) return;
+    b.textContent = muted ? '🔇' : '🔊';
+    b.title = muted ? 'শব্দ চালু করুন' : 'শব্দ বন্ধ করুন';
+    b.classList.toggle('on', muted);
+    b.setAttribute('aria-pressed', muted ? 'true' : 'false');
+  });
+}
+function setMuted(v) {
+  localStorage.setItem(MUTE_KEY, v ? '1' : '0');
+  updateMuteUI();
+  if (v) { bleat.pause(); bleat.currentTime = 0; }
+}
+function playWelcomeBleat() {
+  if (isMuted()) return;
+  try { bleat.currentTime = 0; bleat.play().catch(() => {}); } catch (_) {}
+}
+function toggleMute() {
+  const next = !isMuted();
+  setMuted(next);
+  toast(next ? 'শব্দ বন্ধ ✔' : 'শব্দ চালু ✔');
+  if (!next) playWelcomeBleat();
+}
+$('muteBtn').onclick = toggleMute;
+$('gateMuteBtn').onclick = toggleMute;
+updateMuteUI();
+
 /* ---------- auth gate & sync status ---------- */
 function showGate(state, msg = '') {
   $('gate').hidden = false;
@@ -635,7 +683,10 @@ function showGate(state, msg = '') {
   $('gateSignOut').hidden = state !== 'denied';
   $('gateSpin').hidden = state !== 'loading';
 }
-function hideGate() { $('gate').hidden = true; }
+function hideGate() {
+  $('gate').hidden = true;
+  if (!welcomed) { welcomed = true; playWelcomeBleat(); }
+}
 
 function setSync(meta) {
   const pill = $('syncPill');
@@ -1248,7 +1299,11 @@ resetForm();
 showGate('loading', 'লোড হচ্ছে…');
 onAuthStateChanged(auth, user => {
   Store.stop();
-  if (!user) return showGate('out', 'হিসাব দেখতে Google অ্যাকাউন্ট দিয়ে সাইন ইন করুন');
+  if (!user) {
+    welcomed = false;
+    try { bleat.pause(); bleat.currentTime = 0; } catch (_) {}
+    return showGate('out', 'হিসাব দেখতে Google অ্যাকাউন্ট দিয়ে সাইন ইন করুন');
+  }
   $('userName').textContent = user.displayName || user.email;
   $('userPhoto').src = user.photoURL || '';
   $('userPhoto').hidden = !user.photoURL;
