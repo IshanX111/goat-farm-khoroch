@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#1b5e3a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="খামারের খরচ">
 <title>ছাগলের খামার — খরচের হিসাব</title>
 <link rel="manifest" href="./manifest.webmanifest">
@@ -19,8 +19,9 @@
     --shadow: 0 1px 2px rgba(20,60,35,.06), 0 4px 14px rgba(20,60,35,.06);
   }
   * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body { font-family: 'Nirmala UI', 'Noto Sans Bengali', 'Hind Siliguri', sans-serif; color: var(--ink); margin: 0; background: var(--g0); font-size: 15px; }
+  html { scroll-behavior: smooth; background: var(--g9); }
+  body { font-family: 'Nirmala UI', 'Noto Sans Bengali', 'Hind Siliguri', sans-serif; color: var(--ink); margin: 0; background: var(--g0); font-size: 15px;
+         padding-top: env(safe-area-inset-top, 0px); padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px); }
   button, input, select { font-family: inherit; font-size: inherit; color: inherit; }
   button { cursor: pointer; }
   [hidden] { display: none !important; }
@@ -45,9 +46,10 @@
   .userbox span { font-size: 13px; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .userbox button { border: none; background: rgba(255,255,255,.18); color: #fff; border-radius: 999px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; }
   .userbox button:hover { background: rgba(255,255,255,.3); }
-  .gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 20px;
+  .gate { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+          padding: max(20px, env(safe-area-inset-top, 0px)) 20px max(20px, env(safe-area-inset-bottom, 0px));
           background: #123f28 center / cover no-repeat url('./login-bg.jpg'); }
-  .gate::before { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(18,63,40,.62), rgba(27,94,58,.72) 55%, rgba(18,63,40,.78)); }
+  .gate::before { content: ""; position: absolute; inset: 0; background: linear-gradient(160deg, rgba(18,63,40,.72), rgba(27,94,58,.78) 55%, rgba(18,63,40,.82)); }
   .gate-card { position: relative; z-index: 1; background: rgba(255,255,255,.92); backdrop-filter: blur(10px);
                border-radius: 20px; padding: 28px 24px 24px; max-width: 380px; width: 100%; text-align: center;
                box-shadow: 0 20px 50px rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.5); }
@@ -265,8 +267,8 @@
   }
   @media (max-width: 600px) {
     body { font-size: 15.5px; }
-    .app { padding: 10px 10px calc(96px + env(safe-area-inset-bottom)); }
-    .hero { padding: 16px 16px 18px; border-radius: 16px; }
+    .app { padding: 10px 10px calc(96px + env(safe-area-inset-bottom, 0px)); }
+    .hero { padding: 16px 16px 18px; border-radius: 16px; position: relative; z-index: 1; }
     .hero::after { font-size: 70px; }
     .hero h1 { font-size: 19px; }
     .hero-row > div { flex: 1 1 100%; }
@@ -310,11 +312,16 @@
 
   /* ---------- report (print only) ---------- */
   #report { display: none; }
+  #report.pdf-export {
+    display: block !important; position: absolute; left: -9999px; top: 0; width: 794px;
+    background: #fff; padding: 22px; color: #1f2d24; font-size: 11pt;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
   @media print {
     @page { size: A4; margin: 14mm 13mm 16mm; }
     body { background: #fff; font-size: 11pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .app, .toast, .fab, .gate { display: none !important; }
-    #report { display: block; }
+    #report { display: block; position: static; left: auto; width: auto; padding: 0; }
   }
   .r-hero { background: linear-gradient(135deg, #1b5e3a 0%, #2e7d4f 55%, #4c9a5f 100%); color: #fff; border-radius: 14px; padding: 22px 26px; position: relative; overflow: hidden; }
   .r-hero::after { content: "🐐"; position: absolute; right: 22px; top: 8px; font-size: 64pt; opacity: .18; }
@@ -440,7 +447,7 @@
         </div>
         <label class="switch" style="margin-bottom:12px"><input type="checkbox" id="incInitial" checked><span class="t"></span>প্রাথমিক খরচ (ঢাকা থেকে) PDF-এ রাখুন</label>
         <button class="btn gold" id="pdfBtn2" style="width:100%">📄 PDF ডাউনলোড</button>
-        <p class="hint" style="margin:8px 0 14px">প্রিন্ট উইন্ডো খুললে <b>Save as PDF</b> বেছে Save চাপুন।</p>
+        <p class="hint" style="margin:8px 0 14px">মোবাইলে সরাসরি PDF ফাইল ডাউনলোড হবে। কম্পিউটারেও একই বাটন কাজ করবে।</p>
         <div class="more">
           <button class="btn light sm" id="backupBtn">💾 ব্যাকআপ ফাইল</button>
           <button class="btn light sm" id="restoreBtn">📂 ব্যাকআপ থেকে ফেরত</button>
@@ -1269,17 +1276,61 @@ new IntersectionObserver(([e]) => $('fab').classList.toggle('away', e.isIntersec
 $('fab').onclick = () => { $('formCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => $('fDesc').focus(), 350); };
 
 /* ---------- pdf / backup ---------- */
-$('pdfBtn').onclick = () => {
+async function loadHtml2Pdf() {
+  if (window.html2pdf) return window.html2pdf;
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('pdf-lib'));
+    document.head.appendChild(s);
+  });
+  return window.html2pdf;
+}
+
+async function downloadPdf() {
   if (!reportEntries().length) return toast('PDF বানানোর মতো কোনো খরচ নেই');
   renderReport();
-  const old = document.title;
+  const el = $('report');
   const m = $('monthSel').value;
-  document.title = `goat_farm_khoroch_${m === 'all' ? 'all' : m}_${todayISO()}`;
-  window.print();
-  setTimeout(() => document.title = old, 1000);
-};
+  const filename = `goat_farm_khoroch_${m === 'all' ? 'all' : m}_${todayISO()}.pdf`;
+  const buttons = [$('pdfBtn'), $('pdfBtn2')];
+  buttons.forEach(b => {
+    b.disabled = true;
+    b.dataset.label = b.textContent;
+    b.textContent = '⏳ PDF হচ্ছে…';
+  });
+  toast('PDF তৈরি হচ্ছে, একটু অপেক্ষা করুন…');
+  el.classList.add('pdf-export');
+  try {
+    const html2pdf = await loadHtml2Pdf();
+    await html2pdf().set({
+      margin: [8, 8, 10, 8],
+      filename,
+      image: { type: 'jpeg', quality: 0.96 },
+      html2canvas: { scale: 2, useCORS: true, scrollY: 0, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['.day', '.grand', '.r-hero'] },
+    }).from(el).save();
+    toast('PDF ডাউনলোড হয়েছে ✔');
+  } catch (err) {
+    console.error(err);
+    const old = document.title;
+    document.title = filename.replace(/\.pdf$/, '');
+    window.print();
+    setTimeout(() => { document.title = old; }, 800);
+    toast('প্রিন্ট মেনু খুলুন → PDF হিসেবে সেভ করুন');
+  } finally {
+    el.classList.remove('pdf-export');
+    buttons.forEach(b => {
+      b.disabled = false;
+      b.textContent = b.dataset.label || '📄 PDF ডাউনলোড';
+    });
+  }
+}
 
-$('pdfBtn2').onclick = () => $('pdfBtn').click();
+$('pdfBtn').onclick = () => { downloadPdf(); };
+$('pdfBtn2').onclick = () => { downloadPdf(); };
 
 $('backupBtn').onclick = () => {
   const backup = { version: 2, exportedAt: new Date().toISOString(), entries: Store.entries, activity: Store.activity };
