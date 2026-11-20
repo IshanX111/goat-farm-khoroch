@@ -643,8 +643,10 @@ const Store = {
 
 /* ---------- sound ---------- */
 const MUTE_KEY = 'goatfarm_mute';
+const BLEAT_EVERY_MS = 30_000;
 const bleat = $('bleat');
 let welcomed = false;
+let bleatTimer = null;
 const isMuted = () => localStorage.getItem(MUTE_KEY) === '1';
 function updateMuteUI() {
   const muted = isMuted();
@@ -661,19 +663,31 @@ function setMuted(v) {
   updateMuteUI();
   if (v) { bleat.pause(); bleat.currentTime = 0; }
 }
-function playWelcomeBleat() {
-  if (isMuted()) return;
+function playBleat() {
+  if (isMuted() || document.hidden) return;
   try { bleat.currentTime = 0; bleat.play().catch(() => {}); } catch (_) {}
+}
+function stopBleatLoop() {
+  clearInterval(bleatTimer);
+  bleatTimer = null;
+}
+function startBleatLoop() {
+  stopBleatLoop();
+  playBleat();
+  bleatTimer = setInterval(playBleat, BLEAT_EVERY_MS);
 }
 function toggleMute() {
   const next = !isMuted();
   setMuted(next);
   toast(next ? 'শব্দ বন্ধ ✔' : 'শব্দ চালু ✔');
-  if (!next) playWelcomeBleat();
+  if (!next && welcomed) playBleat();
 }
 $('muteBtn').onclick = toggleMute;
 $('gateMuteBtn').onclick = toggleMute;
 updateMuteUI();
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && welcomed && !isMuted()) playBleat();
+});
 
 /* ---------- auth gate & sync status ---------- */
 function showGate(state, msg = '') {
@@ -685,7 +699,7 @@ function showGate(state, msg = '') {
 }
 function hideGate() {
   $('gate').hidden = true;
-  if (!welcomed) { welcomed = true; playWelcomeBleat(); }
+  if (!welcomed) { welcomed = true; startBleatLoop(); }
 }
 
 function setSync(meta) {
@@ -1301,6 +1315,7 @@ onAuthStateChanged(auth, user => {
   Store.stop();
   if (!user) {
     welcomed = false;
+    stopBleatLoop();
     try { bleat.pause(); bleat.currentTime = 0; } catch (_) {}
     return showGate('out', 'হিসাব দেখতে Google অ্যাকাউন্ট দিয়ে সাইন ইন করুন');
   }
