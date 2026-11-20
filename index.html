@@ -1596,20 +1596,20 @@ async function buildBanglaPdf(filename) {
   y += 4;
   doc.setFillColor(27, 94, 58);
   doc.rect(left, y, width, 8, 'F');
-  y += 5.5;
+  y += 5.1;
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(9);
   doc.text('ক্রম', left + 2, y);
   doc.text('তারিখ', left + 14, y);
   doc.text('আইটেম', left + 95, y);
   doc.text('টাকা', right - 2, y, { align: 'right' });
-  y += 7.5;
+  y += 8.2;
 
   gs.forEach((g, i) => {
     newPageIf(10);
     if (i % 2 === 0) {
       doc.setFillColor(248, 251, 248);
-      doc.rect(left, y - 4, width, 8, 'F');
+      doc.rect(left, y - 5.1, width, 8, 'F');
     }
     write(bn(i + 1), left + 2, 9);
     write(`${g.title} · ${g.sub}`, left + 14, 9);
@@ -1619,8 +1619,9 @@ async function buildBanglaPdf(filename) {
   });
 
   newPageIf(12);
+  y += 1;
   doc.setFillColor(255, 246, 229);
-  doc.rect(left, y - 4, width, 9, 'F');
+  doc.rect(left, y - 5.9, width, 9, 'F');
   write('সর্বমোট', left + 2, 11, [160, 90, 0]);
   writeRight(money(grand), 12, [160, 90, 0]);
   y += 14;
@@ -1636,9 +1637,10 @@ async function buildBanglaPdf(filename) {
     newPageIf(24);
     doc.setFillColor(234, 244, 236);
     doc.roundedRect(left, y - 4, width, 10, 2, 2, 'F');
+    y += 2.2;
     write(`${g.title} · ${g.sub} · ${bn(g.items.length)}টি`, left + 3, 10, [27, 94, 58]);
     writeRight(money(g.total), 10, [27, 94, 58]);
-    y += 10;
+    y += 7.8;
 
     g.items.forEach((e, i) => {
       newPageIf(10);
@@ -1669,9 +1671,9 @@ async function buildBanglaPdf(filename) {
   doc.roundedRect(left, y - 4, width, 14, 3, 3, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(11);
-  doc.text(`সর্বমোট খরচ (${period})`, left + 4, y + 4);
+  doc.text(`সর্বমোট খরচ (${period})`, left + 4, y + 4.4);
   doc.setFontSize(14);
-  doc.text(money(grand), right - 4, y + 5, { align: 'right' });
+  doc.text(money(grand), right - 4, y + 4.7, { align: 'right' });
   y += 18;
   write('হিসাব নোট: প্রতিটি দিনের উপমোট তালিকাভুক্ত আইটেম থেকে স্বয়ংক্রিয়ভাবে যোগ করা হয়েছে।', left, 8, [111, 132, 117]);
 
