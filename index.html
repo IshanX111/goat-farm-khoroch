@@ -4,8 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#1b5e3a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="খামারের খরচ">
 <title>ছাগলের খামার — খরচের হিসাব</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐐</text></svg>">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
 <style>
   :root {
     --g9: #123f28; --g8: #1b5e3a; --g7: #24704a; --g6: #2e7d4f; --g5: #4c9a5f; --g2: #dcecdf; --g1: #eaf4ec; --g0: #f3f7f4;
@@ -60,6 +66,8 @@
   @keyframes rot { to { transform: rotate(360deg); } }
   .import-banner { margin-top: 14px; background: linear-gradient(135deg, #fff9ec, #fff1d2); border-color: #f1d9a6; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
   .import-banner .txt { flex: 1; min-width: 220px; }
+  .install-banner { margin-top: 14px; background: linear-gradient(135deg, #eaf4ec, #dcecdf); border-color: #cfe3d4; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .install-banner .txt { flex: 1; min-width: 220px; }
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; }
   .stat { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 12px 16px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
   .stat .k { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
@@ -368,6 +376,13 @@
       </div>
     </div>
   </header>
+
+  <div class="card install-banner" id="installBanner" hidden>
+    <div style="font-size:34px">📲</div>
+    <div class="txt"><b>অ্যাপের মতো হোমে রাখুন</b><br><span class="hint" id="installHint">হোম স্ক্রিনে আইকন বসালে ব্রাউজার ছাড়াই খুলবে।</span></div>
+    <button class="btn primary" id="installBtn">＋ হোমে যোগ করুন</button>
+    <button class="btn ghost sm" id="installDismiss" type="button">পরে</button>
+  </div>
 
   <div class="card import-banner" id="importBanner" hidden>
     <div style="font-size:34px">📦</div>
@@ -1300,6 +1315,55 @@ $('restoreFile').onchange = async ev => {
   ev.target.value = '';
 };
 
+/* ---------- PWA install ---------- */
+const INSTALL_HIDE = 'goatfarm_install_hide';
+let deferredInstall = null;
+const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+function showInstallBanner() {
+  if (isStandalone() || localStorage.getItem(INSTALL_HIDE) === '1') {
+    $('installBanner').hidden = true;
+    return;
+  }
+  if (deferredInstall) {
+    $('installHint').textContent = 'এক চাপে হোম স্ক্রিনে অ্যাপের মতো আইকন বসবে।';
+    $('installBtn').hidden = false;
+    $('installBanner').hidden = false;
+  } else if (isIos) {
+    $('installHint').textContent = 'iPhone: Safari-এ Share (□↑) → “Add to Home Screen” / “হোম স্ক্রিনে যোগ করুন” চাপুন।';
+    $('installBtn').hidden = true;
+    $('installBanner').hidden = false;
+  } else {
+    $('installHint').textContent = 'Chrome মেনু ⋮ → “Add to Home screen” / “Install app” বেছে নিন। সাইটটি Chrome বা Edge-এ খুলুন।';
+    $('installBtn').hidden = true;
+    $('installBanner').hidden = false;
+  }
+}
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstall = e;
+  showInstallBanner();
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstall = null;
+  $('installBanner').hidden = true;
+  toast('হোমে যোগ হয়েছে ✔');
+});
+$('installBtn').onclick = async () => {
+  if (!deferredInstall) return showInstallBanner();
+  deferredInstall.prompt();
+  await deferredInstall.userChoice;
+  deferredInstall = null;
+  showInstallBanner();
+};
+$('installDismiss').onclick = () => {
+  localStorage.setItem(INSTALL_HIDE, '1');
+  $('installBanner').hidden = true;
+};
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
 /* ---------- start ---------- */
 resetForm();
 showGate('loading', 'লোড হচ্ছে…');
@@ -1316,6 +1380,7 @@ onAuthStateChanged(auth, user => {
   $('userPhoto').hidden = !user.photoURL;
   showGate('loading', `${esc(user.email)}<br>ডাটা লোড হচ্ছে…`);
   Store.start(user);
+  showInstallBanner();
 });
 </script>
 </body>
