@@ -312,16 +312,26 @@
 
   /* ---------- report (print only) ---------- */
   #report { display: none; }
-  #report.pdf-export {
-    display: block !important; position: absolute; left: -9999px; top: 0; width: 794px;
-    background: #fff; padding: 22px; color: #1f2d24; font-size: 11pt;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  #pdfStage {
+    display: none; position: fixed; inset: 0; z-index: 200; background: #fff;
+    overflow: auto; -webkit-overflow-scrolling: touch; padding: 12px;
   }
+  #pdfStage.show { display: block; }
+  #pdfStage .pdf-sheet {
+    width: 794px; max-width: 100%; margin: 0 auto; background: #fff; padding: 18px;
+    color: #1f2d24; font-size: 11pt; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #pdfBusy {
+    display: none; position: fixed; inset: 0; z-index: 210; place-items: center;
+    background: rgba(18,63,40,.55); color: #fff; font-size: 16px; font-weight: 700;
+  }
+  #pdfBusy.show { display: grid; }
+  #pdfBusy .box { background: #fff; color: var(--g8); border-radius: 14px; padding: 18px 22px; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
   @media print {
     @page { size: A4; margin: 14mm 13mm 16mm; }
     body { background: #fff; font-size: 11pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .app, .toast, .fab, .gate { display: none !important; }
-    #report { display: block; position: static; left: auto; width: auto; padding: 0; }
+    .app, .toast, .fab, .gate, #pdfBusy, #pdfStage { display: none !important; }
+    #report { display: block; }
   }
   .r-hero { background: linear-gradient(135deg, #1b5e3a 0%, #2e7d4f 55%, #4c9a5f 100%); color: #fff; border-radius: 14px; padding: 22px 26px; position: relative; overflow: hidden; }
   .r-hero::after { content: "🐐"; position: absolute; right: 22px; top: 8px; font-size: 64pt; opacity: .18; }
@@ -504,6 +514,8 @@
 <button class="fab" id="fab" title="নতুন খরচ">＋</button>
 <div class="toast" id="toast"><span id="toastMsg"></span><button id="toastBtn" hidden></button></div>
 <div id="report"></div>
+<div id="pdfStage" aria-hidden="true"><div class="pdf-sheet" id="pdfSheet"></div></div>
+<div id="pdfBusy" aria-live="polite"><div class="box">⏳ PDF তৈরি হচ্ছে…<div class="hint" style="margin-top:6px">একটু অপেক্ষা করুন</div></div></div>
 
 <audio id="bleat" src="./bleat.mp3" preload="auto"></audio>
 
@@ -1276,22 +1288,221 @@ new IntersectionObserver(([e]) => $('fab').classList.toggle('away', e.isIntersec
 $('fab').onclick = () => { $('formCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => $('fDesc').focus(), 350); };
 
 /* ---------- pdf / backup ---------- */
-async function loadHtml2Pdf() {
-  if (window.html2pdf) return window.html2pdf;
-  await new Promise((resolve, reject) => {
+let jspdfReady = null;
+let bnFontB64 = null;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('pdf-lib'));
+    s.src = src; s.onload = resolve; s.onerror = () => reject(new Error(src));
     document.head.appendChild(s);
   });
-  return window.html2pdf;
+}
+
+async function ensureJsPdf() {
+  if (window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  if (!jspdfReady) jspdfReady = loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  await jspdfReady;
+  return window.jspdf.jsPDF;
+}
+
+function abToB64(buf) {
+  const bytes = new Uint8Array(buf);
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(out);
+}
+
+async function ensureBnFont() {
+  if (bnFontB64) return bnFontB64;
+  const res = await fetch('./NotoSansBengali-Regular.ttf');
+  if (!res.ok) throw new Error('font');
+  bnFontB64 = abToB64(await res.arrayBuffer());
+  return bnFontB64;
+}
+
+function savePdfBlob(blob, filename) {
+  const file = new File([blob], filename, { type: 'application/pdf' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    return navigator.share({ files: [file], title: filename }).catch(() => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.rel = 'noopener';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    });
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+async function buildBanglaPdf(filename) {
+  const jsPDF = await ensureJsPdf();
+  const fontB64 = await ensureBnFont();
+  const gs = groups(reportEntries());
+  const grand = gs.reduce((s, g) => s + g.total, 0);
+  const count = gs.reduce((s, g) => s + g.items.length, 0);
+  const today = todayISO();
+  const month = $('monthSel').value;
+  const months = [...new Set(gs.filter(g => g.date).map(g => g.date.slice(0, 7)))];
+  const period = month !== 'all' ? bnMonth(month) : months.length === 1 ? bnMonth(months[0]) : 'সব খরচ';
+
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
+  doc.addFileToVFS('NotoSansBengali-Regular.ttf', fontB64);
+  doc.addFont('NotoSansBengali-Regular.ttf', 'NotoBn', 'normal');
+  doc.setFont('NotoBn', 'normal');
+
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const left = 14, right = pageW - 14, width = right - left;
+  let y = 16;
+  const lineH = 6;
+
+  const newPageIf = (need) => {
+    if (y + need <= pageH - 14) return;
+    doc.addPage();
+    doc.setFont('NotoBn', 'normal');
+    y = 16;
+  };
+  const write = (text, x, size = 10, color = [31, 45, 36]) => {
+    doc.setFont('NotoBn', 'normal');
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    doc.text(String(text), x, y);
+  };
+  const writeRight = (text, size = 10, color = [31, 45, 36]) => {
+    doc.setFont('NotoBn', 'normal');
+    doc.setFontSize(size);
+    doc.setTextColor(...color);
+    doc.text(String(text), right, y, { align: 'right' });
+  };
+  const rule = (color = [213, 232, 217]) => {
+    doc.setDrawColor(...color);
+    doc.setLineWidth(0.3);
+    doc.line(left, y, right, y);
+  };
+
+  // Header band
+  doc.setFillColor(27, 94, 58);
+  doc.roundedRect(left, y - 6, width, 28, 3, 3, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.text('ছাগলের খামার — খরচের হিসাব', left + 4, y + 4);
+  doc.setFontSize(10);
+  doc.text(`তারিখ অনুযায়ী সম্পূর্ণ খরচের বিবরণী · ${period}`, left + 4, y + 11);
+  doc.text(`হালনাগাদ: ${bnDate(today)}, ${bnDay(today)}`, left + 4, y + 17);
+  y += 30;
+
+  // Stats
+  const stats = [
+    [`মোট দিন / পর্ব`, `${bn(gs.length)}টি`],
+    [`মোট খরচের আইটেম`, `${bn(count)}টি`],
+    [`সর্বমোট খরচ`, money(grand)],
+  ];
+  const sw = (width - 6) / 3;
+  stats.forEach((s, i) => {
+    const x = left + i * (sw + 3);
+    doc.setFillColor(i === 2 ? 255, 246, 229 : 241, 247, 242);
+    doc.roundedRect(x, y, sw, 16, 2, 2, 'F');
+    doc.setTextColor(91, 117, 99);
+    doc.setFontSize(8);
+    doc.text(s[0], x + 3, y + 5);
+    doc.setTextColor(i === 2 ? 160, 90, 0 : 27, 94, 58);
+    doc.setFontSize(11);
+    doc.text(s[1], x + 3, y + 12);
+  });
+  y += 22;
+
+  write('তারিখ অনুযায়ী সারসংক্ষেপ', left, 13, [27, 94, 58]);
+  y += 4;
+  doc.setFillColor(27, 94, 58);
+  doc.rect(left, y, width, 8, 'F');
+  y += 5.5;
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(9);
+  doc.text('ক্রম', left + 2, y);
+  doc.text('তারিখ', left + 14, y);
+  doc.text('আইটেম', left + 95, y);
+  doc.text('টাকা', right - 2, y, { align: 'right' });
+  y += 5;
+
+  gs.forEach((g, i) => {
+    newPageIf(10);
+    if (i % 2 === 0) {
+      doc.setFillColor(248, 251, 248);
+      doc.rect(left, y - 4, width, 8, 'F');
+    }
+    write(bn(i + 1), left + 2, 9);
+    write(`${g.title} · ${g.sub}`, left + 14, 9);
+    write(`${bn(g.items.length)}টি`, left + 95, 9);
+    writeRight(money(g.total), 9, [27, 94, 58]);
+    y += 8;
+  });
+
+  newPageIf(12);
+  doc.setFillColor(255, 246, 229);
+  doc.rect(left, y - 4, width, 9, 'F');
+  write();
+  write('সর্বমোট', left + 2, 11, [160, 90, 0]);
+  writeRight(money(grand), 12, [160, 90, 0]);
+  y += 14;
+
+  // Details
+  doc.addPage();
+  doc.setFont('NotoBn', 'normal');
+  y = 16;
+  write('তারিখ অনুযায়ী বিস্তারিত খরচ', left, 13, [27, 94, 58]);
+  y += 8;
+
+  gs.forEach((g) => {
+    newPageIf(24);
+    doc.setFillColor(234, 244, 236);
+    doc.roundedRect(left, y - 4, width, 10, 2, 2, 'F');
+    write(`${g.title} · ${g.sub} · ${bn(g.items.length)}টি`, left + 3, 10, [27, 94, 58]);
+    writeRight(money(g.total), 10, [27, 94, 58]);
+    y += 8;
+
+    g.items.forEach((e, i) => {
+      newPageIf(10);
+      const note = e.note ? ` (${e.note})` : '';
+      const lines = doc.splitTextToSize(`${bn(i + 1)}. ${e.desc}${note}`, width - 36);
+      write(lines[0], left + 2, 9);
+      writeRight(money(e.amount), 9, [27, 94, 58]);
+      y += lineH;
+      for (let li = 1; li < lines.length; li++) {
+        newPageIf(8);
+        write(lines[li], left + 8, 9, [111, 132, 117]);
+        y += 5;
+      }
+    });
+
+    newPageIf(10);
+    doc.setDrawColor(213, 232, 217);
+    doc.line(left, y - 2, right, y - 2);
+    write('উপমোট', left + 2, 10, [27, 94, 58]);
+    writeRight(money(g.total), 10, [27, 94, 58]);
+    y += 10;
+  });
+
+  newPageIf(18);
+  doc.setFillColor(27, 94, 58);
+  doc.roundedRect(left, y - 4, width, 14, 3, 3, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(11);
+  doc.text(`সর্বমোট খরচ (${period})`, left + 4, y + 4);
+  doc.setFontSize(14);
+  doc.text(money(grand), right - 4, y + 5, { align: 'right' });
+  y += 18;
+  write('হিসাব নোট: প্রতিটি দিনের উপমোট তালিকাভুক্ত আইটেম থেকে স্বয়ংক্রিয়ভাবে যোগ করা হয়েছে।', left, 8, [111, 132, 117]);
+
+  return doc.output('blob');
 }
 
 async function downloadPdf() {
   if (!reportEntries().length) return toast('PDF বানানোর মতো কোনো খরচ নেই');
-  renderReport();
-  const el = $('report');
   const m = $('monthSel').value;
   const filename = `goat_farm_khoroch_${m === 'all' ? 'all' : m}_${todayISO()}.pdf`;
   const buttons = [$('pdfBtn'), $('pdfBtn2')];
@@ -1300,28 +1511,17 @@ async function downloadPdf() {
     b.dataset.label = b.textContent;
     b.textContent = '⏳ PDF হচ্ছে…';
   });
-  toast('PDF তৈরি হচ্ছে, একটু অপেক্ষা করুন…');
-  el.classList.add('pdf-export');
+  $('pdfBusy').classList.add('show');
   try {
-    const html2pdf = await loadHtml2Pdf();
-    await html2pdf().set({
-      margin: [8, 8, 10, 8],
-      filename,
-      image: { type: 'jpeg', quality: 0.96 },
-      html2canvas: { scale: 2, useCORS: true, scrollY: 0, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['.day', '.grand', '.r-hero'] },
-    }).from(el).save();
+    const blob = await buildBanglaPdf(filename);
+    if (!blob || blob.size < 800) throw new Error('empty-pdf');
+    await savePdfBlob(blob, filename);
     toast('PDF ডাউনলোড হয়েছে ✔');
   } catch (err) {
     console.error(err);
-    const old = document.title;
-    document.title = filename.replace(/\.pdf$/, '');
-    window.print();
-    setTimeout(() => { document.title = old; }, 800);
-    toast('প্রিন্ট মেনু খুলুন → PDF হিসেবে সেভ করুন');
+    toast('PDF বানাতে সমস্যা হয়েছে। ইন্টারনেট আছে কিনা দেখুন।');
   } finally {
-    el.classList.remove('pdf-export');
+    $('pdfBusy').classList.remove('show');
     buttons.forEach(b => {
       b.disabled = false;
       b.textContent = b.dataset.label || '📄 PDF ডাউনলোড';

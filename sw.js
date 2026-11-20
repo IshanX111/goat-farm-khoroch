@@ -1,6 +1,6 @@
 /* Minimal service worker so the site can be installed like an app. */
-const CACHE = 'khoroch-shell-v1';
-const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './login-bg.jpg', './bleat.mp3'];
+const CACHE = 'khoroch-shell-v2';
+const SHELL = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png', './apple-touch-icon.png', './login-bg.jpg', './bleat.mp3', './NotoSansBengali-Regular.ttf'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
