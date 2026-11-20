@@ -50,9 +50,6 @@
   .gate-card h1 { font-size: 21px; color: var(--g8); margin: 10px 0 6px; }
   .gate-card p { color: var(--muted); margin: 0 0 18px; line-height: 1.6; }
   .gate-card .btn { width: 100%; padding: 13px; font-size: 16px; }
-  .gate-mute { position: absolute; top: 12px; right: 12px; width: 40px; height: 40px; border-radius: 50%;
-               border: 1px solid rgba(27,94,58,.2); background: rgba(255,255,255,.85); font-size: 18px; padding: 0; }
-  .gate-mute:hover { background: #fff; }
   .gbtn { background: #fff; color: #3c4043; border: 1.5px solid #dadce0 !important; gap: 10px; }
   .gbtn:hover { background: #f7f8f8; }
   .mute-btn { border: none; background: rgba(255,255,255,.18); color: #fff; border-radius: 999px; padding: 7px 12px;
@@ -490,7 +487,6 @@
 
 <div class="gate" id="gate">
   <div class="gate-card">
-    <button type="button" class="gate-mute" id="gateMuteBtn" title="শব্দ মিউট" aria-label="শব্দ মিউট">🔊</button>
     <div class="goat">🐐</div>
     <h1>ছাগলের খামার — খরচের হিসাব</h1>
     <p id="gateMsg">লোড হচ্ছে…</p>
@@ -650,13 +646,11 @@ let bleatTimer = null;
 const isMuted = () => localStorage.getItem(MUTE_KEY) === '1';
 function updateMuteUI() {
   const muted = isMuted();
-  ['muteBtn', 'gateMuteBtn'].forEach(id => {
-    const b = $(id); if (!b) return;
-    b.textContent = muted ? '🔇' : '🔊';
-    b.title = muted ? 'শব্দ চালু করুন' : 'শব্দ বন্ধ করুন';
-    b.classList.toggle('on', muted);
-    b.setAttribute('aria-pressed', muted ? 'true' : 'false');
-  });
+  const b = $('muteBtn');
+  b.textContent = muted ? '🔇' : '🔊';
+  b.title = muted ? 'শব্দ চালু করুন' : 'শব্দ বন্ধ করুন';
+  b.classList.toggle('on', muted);
+  b.setAttribute('aria-pressed', muted ? 'true' : 'false');
 }
 function setMuted(v) {
   localStorage.setItem(MUTE_KEY, v ? '1' : '0');
@@ -683,7 +677,6 @@ function toggleMute() {
   if (!next && welcomed) playBleat();
 }
 $('muteBtn').onclick = toggleMute;
-$('gateMuteBtn').onclick = toggleMute;
 updateMuteUI();
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden && welcomed && !isMuted()) playBleat();
@@ -725,7 +718,6 @@ function onDbError(err) {
 
 $('signInBtn').onclick = async () => {
   const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ prompt: 'select_account' });
   try {
     await signInWithPopup(auth, provider);
   } catch (err) {
