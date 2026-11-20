@@ -847,16 +847,17 @@ function onDbError(err) {
 }
 
 $('signInBtn').onclick = async () => {
-  // Must unlock during this tap — iPhone won't allow sound after Google login returns.
-  await unlockAudio();
   const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  // Open the Google popup FIRST, synchronously inside the tap. Any `await` before this
+  // uses up the tap and the phone blocks the popup.
+  const popup = signInWithPopup(auth, provider);
+  // Unlock sound in the same tap, but don't wait for it.
+  unlockAudio();
   try {
-    await signInWithPopup(auth, provider);
-    // Popup closed: try unlock again while still in the click task chain when possible.
-    await unlockAudio();
+    await popup;
   } catch (err) {
     if (err.code === 'auth/popup-blocked' || err.code === 'auth/operation-not-supported-in-this-environment') {
-      await unlockAudio();
       return signInWithRedirect(auth, provider);
     }
     if (err.code !== 'auth/popup-closed-by-user' && err.code !== 'auth/cancelled-popup-request') {
